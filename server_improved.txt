@@ -1,0 +1,255 @@
+import sys
+import os
+from PyQt5.QtWidgets import *
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from vidstream import *
+import socket
+import threading
+from threading import Thread
+from screeninfo import get_monitors
+import cv2, pickle, struct, imutils
+import numpy as np
+import pyttsx3
+import time
+
+for m in get_monitors():
+    strt = str(m)
+MONITOR_WIDTH = int(int((strt.split(",")[2]).replace("width=","")) * 0.5)
+MONITOR_HEIGHT = int(int((strt.split(",")[3]).replace("height=","")) * 0.85)
+print(MONITOR_WIDTH, MONITOR_HEIGHT)
+
+engine = pyttsx3.init()
+engine.setProperty('rate', 180)
+BUTTON_WIDTH = int(MONITOR_WIDTH*0.175)
+BUTTON_HEIGHT = int(MONITOR_HEIGHT*0.058)
+INI_WIDTH = int(MONITOR_WIDTH*0.35)
+INI_HEIGHT = int(MONITOR_HEIGHT*0.058)
+
+TCP_IP = socket.gethostbyname(socket.gethostname()) 
+# TCP_IP = "192.168.1.82"
+TCP_PORT = 7777 
+is_vid = False
+
+class Window(QDialog):
+    def __init__(self):
+        super().__init__()
+        self.setFixedSize(MONITOR_WIDTH , MONITOR_HEIGHT)
+        self.setWindowTitle("Server")
+        self.setStyleSheet("""
+        background-color: #262626;
+        color: #FFFFFF;
+        font-family: Aharoni;
+        font-size: 36px;
+        
+        QPushButton {
+        background-color: #2ABf9E;
+        padding: 20px;
+        font-size: 36px; 
+
+        .monospace {
+        font-family: "Lucida Console", Courier, monospace;
+        }
+        }
+        """)
+        
+        self.chatTextField=QLineEdit(self)
+        self.chatTextField.setFixedSize(INI_WIDTH + int(MONITOR_WIDTH*0.07),INI_HEIGHT)
+        # self.chatTextField.move(10,350)
+
+        self.btnSend = QPushButton("SEND",self)
+        self.btnSend.setFixedSize(BUTTON_WIDTH, BUTTON_HEIGHT)
+        self.btnSend.move(200,460)
+        self.btnSend.setStyleSheet("border: 2px solid white")
+        self.btnSend.clicked.connect(self.send)
+
+        self.chat = QTextEdit()
+        self.chat.setFixedSize(int(MONITOR_WIDTH*0.6),640)
+        self.chat.setStyleSheet("border: 2px solid white; font-family: Arial; font-size: 26px;")
+        self.chat.setReadOnly(True)
+
+        self.cls_button = QPushButton("Clear")
+        self.cls_button.setFixedSize(BUTTON_WIDTH, BUTTON_HEIGHT)
+        self.cls_button.setStyleSheet("border: 2px solid white")
+        self.cls_button.clicked.connect(self.clear)
+
+        self.exit_button = QPushButton("Exit")
+        self.exit_button.setFixedSize(BUTTON_WIDTH, BUTTON_HEIGHT)
+        self.exit_button.setStyleSheet("border: 2px solid white")
+        self.exit_button.clicked.connect(self.exit)
+
+        self.video_button = QPushButton("Display Video")
+        self.video_button.setFixedSize(BUTTON_WIDTH, BUTTON_HEIGHT)
+        self.video_button.setStyleSheet("border: 2px solid white")
+
+        self.FeedLabel = QLabel(self)
+        self.FeedLabel.setFixedSize(int(MONITOR_WIDTH*0.445), int(MONITOR_HEIGHT*0.35))
+        self.FeedLabel.setStyleSheet("border: 2px solid white")
+        p = QPixmap('grey.jpg')
+        self.FeedLabel.setPixmap(p)
+        self.FeedLabel.resize(int(MONITOR_WIDTH*0.445), int(MONITOR_HEIGHT*0.35))
+
+        self.grid_layout = QGridLayout(self)
+
+        self.setLayout(self.grid_layout)
+        self.grid_layout.setContentsMargins(20,20,10,10) 
+
+        self.grid_layout.addWidget(self.btnSend, 7, 1, alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
+        self.grid_layout.addWidget(self.chat, 6 ,1, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.grid_layout.addWidget(self.chatTextField, 7, 1, alignment=Qt.AlignmentFlag.AlignTop)
+        self.grid_layout.addWidget(self.cls_button, 4, 1, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.grid_layout.addWidget(self.exit_button, 4, 1, alignment=Qt.AlignmentFlag.AlignRight)
+        self.grid_layout.addWidget(self.FeedLabel, 3, 1, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.grid_layout.addWidget(self.video_button, 4, 1, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        self.serverThread=ServerThread(self, self.FeedLabel)
+
+        self.serverThread.start()
+
+        anim=threading.Thread(target=self.animation)
+        
+        anim.start()
+
+    def send(self):
+        try:
+            global conn
+            text=self.chatTextField.text()
+            conn.send(text.encode("utf-8"))
+            self.chat.append(f"[{TCP_IP}] SERVER MESSAGE> "+text)
+            self.chatTextField.setText("")
+        except NameError:
+            self.chat.append(f"THERE'S NO ONE HOME")
+        except OSError:
+            self.chat.append(f"THERE'S NO ONE HOME")
+
+    def clear(self):
+        self.chat.setText("")
+        self.chat.update()
+
+    def exit(self):
+        os._exit(1)
+
+    def animation(self):
+        data = ["e","n","t","e","r"," ","y","o","u","r"," ","m","e","s","s","a","g","e"]
+        while True:
+            for x in range(len(data)):
+                old = data[x]
+                data[x] = old.upper()
+                text = "".join(data)
+                self.chatTextField.setPlaceholderText(text)
+                data[x] = old
+                time.sleep(0.2)
+            text = "".join(data)
+            self.chatTextField.setPlaceholderText(text)
+
+class ServerThread(QThread):
+
+    def __init__(self,window, FeedLabel): 
+        super().__init__() 
+        self.window=window
+        self.FeedLabel = FeedLabel
+        self.ip = ''
+
+    @pyqtSlot(np.ndarray)
+    def update_image(self, cv_img):
+        qt_img = self.convert_cv_qt(cv_img)
+        self.FeedLabel.setPixmap(qt_img)
+    
+    def convert_cv_qt(self, cv_img):
+        rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
+        h, w, ch = rgb_image.shape
+        bytes_per_line = ch * w
+        convert_to_Qt_format = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        p = convert_to_Qt_format.scaled(int(MONITOR_WIDTH*0.445), int(MONITOR_HEIGHT*0.35), Qt.KeepAspectRatio)
+        return QPixmap.fromImage(p)
+
+    def run(self):  
+        TCPServer = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
+        TCPServer.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) 
+        TCPServer.bind((TCP_IP, TCP_PORT)) 
+        threads = [] 
+        window.chat.append("Started TCP server on ["+str(TCP_IP)+"], ("+str(TCP_PORT)+")")
+        
+        TCPServer.listen(4) 
+        while True:
+            window.chat.append("Waiting for connections from TCP clients...") 
+            global conn
+            global addr
+            conn,addr = TCPServer.accept()
+            (ip, port) = addr
+            conn.send(socket.gethostbyname(socket.gethostname()).encode("utf-8"))
+
+            newthread = ClientThread(ip,port,window) 
+            newthread.change_pixmap_signal.connect(self.update_image)
+            newthread.start() 
+            threads.append(newthread) 
+    
+class ClientThread(QThread): 
+    change_pixmap_signal = pyqtSignal(np.ndarray)
+
+    def ImageUpdateSlot(self, Image):
+        window.FeedLabel.setPixmap(QPixmap.fromImage(Image))
+ 
+    def __init__(self,ip,port,window): 
+        super().__init__() 
+        self.window=window
+        self.ip = ip 
+        self.port = port 
+        window.chat.append("[+] New server socket thread started for " + ip + ":" + str(port)) 
+ 
+    def run(self): 
+        BUFFER_SIZE = 1048576
+
+        self.Worker1 = Worker1()
+        self.Worker1.start()
+        self.Worker1.ImageUpdate.connect(self.ImageUpdateSlot)
+        
+        while True : 
+            try:
+                global conn
+                EXIT_BOOL = False
+                data = conn.recv(BUFFER_SIZE)
+                print(len(data))
+                if len(data) < 2_000:
+                    if data.decode('utf-8') == "EXIT_CODE_0xc0000":
+                        conn.close()
+                        break
+                    else:
+                        window.chat.append(f"[{TCP_IP}] SERVER MESSAGE> " +data.decode("utf-8"))
+                else:
+                    try:
+                        buff = np.fromstring(data, np.uint8)
+                        buff = buff.reshape(1, -1)
+                        img = cv2.imdecode(buff, cv2.IMREAD_COLOR)
+                        self.change_pixmap_signal.emit(img)
+                    except TypeError:
+                        continue
+                    continue
+            except ConnectionResetError:
+                continue
+        time.sleep(0.5)
+        pixmap = QPixmap('grey.jpg')
+        window.FeedLabel.setPixmap(pixmap)
+        window.FeedLabel.resize(int(MONITOR_WIDTH*0.445), int(MONITOR_HEIGHT*0.35))
+
+class Worker1(QThread):
+    ImageUpdate = pyqtSignal(QImage)
+    def run(self):   
+        Capture = cv2.VideoCapture(0)
+        while True:
+            try:
+                ret, frame = Capture.read()  
+                if ret:
+                    image_bytes = cv2.imencode('.jpg', frame)[1].tobytes()
+                    conn.send(image_bytes)
+            except OSError:
+                break
+            
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    global window
+    window = Window()
+    window.exec()
+    sys.exit(app.exec_())
+
+#server and client webcam image code using socket and cv2?

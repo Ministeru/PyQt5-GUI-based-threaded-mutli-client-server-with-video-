@@ -1,0 +1,207 @@
+import sys
+import os
+from PyQt5.QtWidgets import *
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from vidstream import *
+import socket
+import threading
+from threading import Thread 
+from screeninfo import get_monitors
+import cv2, pickle, struct, imutils
+import numpy as np
+import pyttsx3
+
+for m in get_monitors():
+    strt = str(m)
+MONITOR_WIDTH = int(int((strt.split(",")[2]).replace("width=","")) * 0.5)
+MONITOR_HEIGHT = int(int((strt.split(",")[3]).replace("height=","")) * 0.85)
+
+engine = pyttsx3.init()
+engine.setProperty('rate', 180)
+BUTTON_WIDTH = int(MONITOR_WIDTH*0.175)
+BUTTON_HEIGHT = int(MONITOR_HEIGHT*0.058)
+INI_WIDTH = int(MONITOR_WIDTH*0.35)
+INI_HEIGHT = int(MONITOR_HEIGHT*0.058)
+
+TCP_IP = socket.gethostbyname(socket.gethostname()) #'192.168.1.76'
+TCP_PORT = 7777 
+BUFFER_SIZE = 20 
+is_vid = False
+
+class Window(QDialog):
+    def __init__(self):
+        super().__init__()
+        self.setFixedSize(MONITOR_WIDTH , MONITOR_HEIGHT)
+        self.setWindowTitle("Client")
+        self.setStyleSheet("""
+        background-color: #262626;
+        color: #FFFFFF;
+        font-family: Aharoni;
+        font-size: 36px;
+
+        QPushButton {
+        background-color: #2ABf9E;
+        padding: 20px;
+        font-size: 36px; 
+
+        .monospace {
+        font-family: "Lucida Console", Courier, monospace;
+        }
+        }
+        """)
+        
+        self.chatTextField=QLineEdit(self)
+        self.chatTextField.setFixedSize(INI_WIDTH + int(MONITOR_WIDTH*0.07),INI_HEIGHT)
+        # self.chatTextField.move(10,350)
+
+        self.btnSend = QPushButton("SEND",self)
+        self.btnSend.setFixedSize(BUTTON_WIDTH, BUTTON_HEIGHT)
+        self.btnSend.move(200,460)
+        self.btnSend.setStyleSheet("border: 2px solid white")
+        self.btnSend.clicked.connect(self.send)
+
+        self.chat = QTextEdit()
+        self.chat.setFixedSize(int(MONITOR_WIDTH*0.6),640)
+        self.chat.setStyleSheet("border: 2px solid white; font-family: Arial; font-size: 26px;")
+        self.chat.setReadOnly(True)
+
+        self.cls_button = QPushButton("Clear")
+        self.cls_button.setFixedSize(BUTTON_WIDTH, BUTTON_HEIGHT)
+        self.cls_button.setStyleSheet("border: 2px solid white")
+        self.cls_button.clicked.connect(self.clear)
+
+        self.exit_button = QPushButton("Exit")
+        self.exit_button.setFixedSize(BUTTON_WIDTH, BUTTON_HEIGHT)
+        self.exit_button.setStyleSheet("border: 2px solid white")
+        self.exit_button.clicked.connect(self.exit)
+
+        self.video_button = QPushButton("Display Video")
+        self.video_button.setFixedSize(BUTTON_WIDTH, BUTTON_HEIGHT)
+        self.video_button.setStyleSheet("border: 2px solid white")
+
+        self.FeedLabel = QLabel(self)
+        self.FeedLabel.setFixedSize(int(MONITOR_WIDTH*0.4), int(MONITOR_HEIGHT*0.35))
+        self.FeedLabel.setStyleSheet("border: 2px solid white")
+
+        self.grid_layout = QGridLayout(self)
+
+        self.setLayout(self.grid_layouat)
+        self.grid_layout.setContentsMargins(20,20,10,10) 
+
+        self.grid_layout.addWidget(self.btnSend, 7, 1, alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
+        self.grid_layout.addWidget(self.chat, 6 ,1, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.grid_layout.addWidget(self.chatTextField, 7, 1, alignment=Qt.AlignmentFlag.AlignTop)
+        self.grid_layout.addWidget(self.cls_button, 4, 1, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.grid_layout.addWidget(self.exit_button, 4, 1, alignment=Qt.AlignmentFlag.AlignRight)
+        self.grid_layout.addWidget(self.FeedLabel, 3, 1, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.grid_layout.addWidget(self.video_button, 4, 1, alignment=Qt.AlignmentFlag.AlignCenter)
+
+
+        self.setWindowTitle("Server")
+        self.resize(500, 500)
+
+    def send(self):
+        text=self.chatTextField.text()
+        self.chat.append(f"[{TCP_IP}] SERVER MESSAGE> "+text)
+        global conn
+        conn.send(text.encode("utf-8"))
+        self.chatTextField.setText("")
+
+    def clear(self):
+        self.chat.setText("")
+        self.chat.update()
+
+    def exit(self):
+        os._exit(1)
+
+    def video(self):
+        if conn:
+            vid = cv2.VideoCapture(0)
+            
+            while(vid.isOpened()):
+                img,frame = vid.read()
+                frame = imutils.resize(frame,width=400)
+                a = pickle.dumps(frame)
+                message = struct.pack("Q",len(a))+a
+                conn.sendall(message)
+                
+                cv2.imshow('SERVER',frame)
+
+class ServerThread(Thread):
+    def __init__(self,window): 
+        Thread.__init__(self) 
+        self.window=window
+        self.ip = ''
+        
+        self.Worker1 = Worker1()
+
+        self.Worker1.start()
+        self.Worker1.ImageUpdate.connect(self.ImageUpdateSlot)
+        
+
+    def ImageUpdateSlot(self, Image):
+        window.FeedLabel.setPixmap(QPixmap.fromImage(Image))
+
+    def run(self):  
+        tcpServer = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
+        tcpServer.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) 
+        tcpServer.bind((TCP_IP, TCP_PORT)) 
+        threads = [] 
+        window.chat.append("Started TCP server on ["+str(TCP_IP)+"], ("+str(TCP_PORT)+")")
+        
+        tcpServer.listen(4) 
+        while True:
+            window.chat.append("Waiting for connections from TCP clients...") 
+            global conn
+            global addr
+            # (conn, (ip,port)) = tcpServer.accept()
+            conn,addr = tcpServer.accept() ###
+            (ip, port) = addr
+            print(conn)
+            print((conn, (ip,port)))
+            conn.send(socket.gethostbyname(socket.gethostname()).encode("utf-8"))
+            self.ip = ip
+            newthread = ClientThread(ip,port,window) 
+            newthread.start() 
+            threads.append(newthread) 
+    
+            
+class ClientThread(Thread): 
+ 
+    def __init__(self,ip,port,window): 
+        Thread.__init__(self) 
+        self.window=window
+        self.ip = ip 
+        self.port = port 
+        window.chat.append("[+] New server socket thread started for " + ip + ":" + str(port)) 
+ 
+    def run(self): 
+        BUFFER_SIZE = 2048
+        while True : 
+            global conn
+            data = conn.recv(BUFFER_SIZE) 
+            if (isinstance(data, bytes)):
+                window.chat.append(f"[{self.ip}] CLIENT MESSAGE> " +data.decode("utf-8"))
+
+class Worker1(QThread):
+    print(1)
+    ImageUpdate = pyqtSignal(QImage)
+    def run(self):
+        Capture = cv2.VideoCapture(0)
+        while True:
+            ret, frame = Capture.read()
+            if ret:
+                Image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                FlippedImage = cv2.flip(Image, 1)
+                ConvertToQtFormat = QImage(FlippedImage.data, FlippedImage.shape[1], FlippedImage.shape[0], QImage.Format_RGB888)
+                Pic = ConvertToQtFormat.scaled(640, 480, Qt.KeepAspectRatio)
+                self.ImageUpdate.emit(Pic)
+        
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    window = Window()
+    serverThread=ServerThread(window)
+    serverThread.start()
+    window.exec()
+    sys.exit(app.exec_())

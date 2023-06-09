@@ -1,0 +1,131 @@
+import sounddevice as sd
+
+SERVER:
+
+            # self.OutPut = OutPut(conn)        #OutPut handler
+            # self.OutPut.start()               #<==============
+
+            # self.InPut = InPut()              #InPut handler
+            # self.InPut.start()                #<==============
+
+class InPut(QThread):
+    def __init__(self) :
+        super().__init__()
+
+    def callback(self, indata, outdata, frames, time, status):
+        outdata[:] = indata             #<====== Data conventer:OutPut
+        
+    def run(self):
+        CHUNK = 4096
+
+        stream = sd.Stream(
+        samplerate=44100,
+        channels=1,
+        blocksize=CHUNK)
+
+        stream.start()
+        while True:
+            try:
+                indata, overflowed = stream.read(CHUNK)
+                x = np.array(indata, dtype='float32')
+                for client in window.clients:
+                    client.send(x.tobytes())
+            except ConnectionResetError:
+                    break
+            except OSError:
+                break
+
+class OutPut(QThread):
+    def __init__(self, conn) :
+        super().__init__()
+        self.conn = conn
+        time.sleep(1)
+
+    def callback(self, indata, outdata, frames, time, status):
+        outdata[:] = indata             #<====== Data conventer:Output
+        
+    def run(self):
+        CHUNK = 4096
+
+        stream = sd.Stream(
+        samplerate=44100,
+        channels=1,
+        blocksize=CHUNK)
+
+        stream.start()
+        while True:
+            try:
+                if window.clients:
+                    indata, overflowed = stream.read(CHUNK)
+                    if len(data) == 16_384:
+                        stream.write(np.frombuffer(data, dtype='float32'))
+                else: break
+            except ConnectionResetError:
+                    break
+            except OSError:
+                break
+
+
+
+
+CLIENT:
+
+        # self.OutPut = OutPut(tcpClientA)      #OutPut handler
+        # self.OutPut.start()                   #<==============
+
+        # self.InPut = InPut(tcpClientA)        #InPut handler
+        # self.InPut.start()                    #<==============
+
+class OutPut(QThread):
+    def __init__(self, tcpClientA) :
+        super().__init__()
+        self.tcpClientA = tcpClientA
+        time.sleep(1)
+
+    def callback(self, indata, outdata, frames, time, status):
+        outdata[:] = indata             #<====== Data conventer:Output
+
+    def run(self):
+        CHUNK = 4096
+
+        stream = sd.Stream(
+        samplerate=44100,
+        channels=1,
+        blocksize=CHUNK)
+
+        stream.start()
+        while True:
+            try:
+                indata, overflowed = stream.read(CHUNK)
+                stream.write(np.frombuffer(data, dtype='float32'))
+            except ConnectionResetError:
+                    break
+            except OSError:
+                break
+
+class InPut(QThread):
+    def __init__(self, tcpClientA):
+        super().__init__()
+        self.tcpClientA = tcpClientA
+
+    def callback(self, indata, outdata, frames, time, status):
+        outdata[:] = indata             #<====== Data conventer:Output
+
+    def run(self):
+        CHUNK = 4096
+
+        stream = sd.Stream(
+        samplerate=44100,
+        channels=1,
+        blocksize=CHUNK)
+
+        stream.start()
+        while True:
+            try:
+                indata, overflowed = stream.read(CHUNK)
+                x = np.array(indata, dtype='float32')
+                self.tcpClientA.send(x.tobytes())
+            except ConnectionResetError:
+                    break
+            except OSError:
+                break
