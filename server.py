@@ -821,6 +821,7 @@ class Worker1(QThread):
                 try:
                     ret, frame = Capture.read()  
                     if ret:
+			frame = cv2.resize(frame, (0,0), fx = 0.5, fy = 0.5)
                         image_bytes = cv2.imencode('.jpg', frame)[1].tobytes()
                         for client in window.clients:
                             client.send(image_bytes)
