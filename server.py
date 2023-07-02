@@ -36,12 +36,12 @@ START_GAP = int(MONITOR_HEIGHT*0.015)
 
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.connect(("8.8.8.8", 80))
-# TCP_IP = s.getsockname()[0]
+TCP_IP = s.getsockname()[0]
 s.close()
 
-TCP_IP = socket.gethostbyname(socket.gethostname()) 
+# TCP_IP = socket.gethostbyname(socket.gethostname()) 
 
-TCP_PORT = 7777 
+TCP_PORT = 8080 
 BUFFER_SIZE = 1048576
 camera = True
 open_ = False
@@ -438,8 +438,7 @@ class Window(QDialog):
         return
         
     def special_commands(self, text):
-        text = text.lower()
-        if text == "!clients":
+        if text.lower() == "!clients":
             self.chat.append(f"-"*80)
             self.chat.append(f"Number of clients: {len(self.clients)}")
             for client in self.clients:
@@ -448,10 +447,10 @@ class Window(QDialog):
                 self.chat.append(f"Name: ~{self.names[index]}~ \nConnection: {client} \nCamera: {self.cameras[index]}")
             self.chat.append(f"-"*80)
 
-        elif text[0:6] == "!clear":
+        elif text.lower()[0:6] == "!clear":
             self.chat.setText("")
 
-        elif text[0:5] == "!kick" and text[0:6] != "!kick!":
+        elif text.lower()[0:5] == "!kick" and text[0:6] != "!kick!":
             try:
                 self.chat.append(f"-"*80)
                 with open('bans.txt', 'r') as f:
@@ -478,7 +477,7 @@ class Window(QDialog):
                self.chat.append(f"Client ~{text[6:None]}~ deos not exist") 
                self.chat.append(f"-"*80)
 
-        elif text[0:6] == "!kick!":
+        elif text.lower()[0:6] == "!kick!":
             try:
                 self.chat.append(f"-"*80)
                 name = str(text[7:None])
@@ -495,7 +494,7 @@ class Window(QDialog):
             except:
                pass
 
-        elif text[0:5] == "!vban":
+        elif text.lower()[0:5] == "!vban":
             try:
                 self.chat.append(f"-"*80)
                 with open('bans.txt', 'r') as f:
@@ -509,13 +508,13 @@ class Window(QDialog):
             except:
                 pass
 
-        elif text[0:9] == "!voice on":
+        elif text.lower()[0:9] == "!voice on":
             options[2] = True
 
-        elif text[0:10] == "!voice off":
+        elif text.lower()[0:10] == "!voice off":
             options[2] = False
 
-        elif text[0:5] == "!send":
+        elif text.lower()[0:5] == "!send":
             try:
                 self.chat.append(f"-"*80)
                 name = ''
@@ -538,7 +537,7 @@ class Window(QDialog):
                self.chat.append(f"Client ~{text[6:None]}~ deos not exist") 
                self.chat.append(f"-"*80)
 
-        elif text[0:4] == "!ban":
+        elif text.lower()[0:4] == "!ban":
             try:
                 self.chat.append(f"-"*80)
                 with open('bans.txt', 'r') as f:
@@ -567,7 +566,7 @@ class Window(QDialog):
                 self.chat.append(f"-"*80)
                 window.chatTextField.clear()
 
-        elif text[0:5] == "!help":
+        elif text.lower()[0:5] == "!help":
             command = text[6:None]
             self.chat.append(f"-"*80)
             if command == "clients":
@@ -821,7 +820,7 @@ class Worker1(QThread):
                 try:
                     ret, frame = Capture.read()  
                     if ret:
-			frame = cv2.resize(frame, (0,0), fx = 0.5, fy = 0.5)
+                        frame = cv2.resize(frame, (0,0), fx = 0.5, fy = 0.5)
                         image_bytes = cv2.imencode('.jpg', frame)[1].tobytes()
                         for client in window.clients:
                             client.send(image_bytes)
